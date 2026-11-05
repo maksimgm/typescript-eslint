@@ -24,6 +24,7 @@ import {
 } from './prefer-optional-chain-utils/compareNodes';
 import {
   gatherLogicalOperands,
+  isValidFalseBooleanCheckType,
   OperandValidity,
 } from './prefer-optional-chain-utils/gatherLogicalOperands';
 
@@ -76,6 +77,32 @@ function getLinkStartToken(
   return sourceCode.getTokenAfter(link.callee, {
     filter: token => token.value === '(',
   });
+}
+
+/**
+ * Gets the text of `chain` with `link` made optional,
+ * e.g. `foo?.bar.baz()` for `foo.bar.baz()` when `link` is `foo.bar`.
+ */
+function getOptionalChainText(
+  sourceCode: SourceCode,
+  chain: TSESTree.Expression,
+  link: TSESTree.CallExpression | TSESTree.MemberExpression,
+): string | null {
+  const chainText = sourceCode.getText(chain);
+  if (link.optional) {
+    return chainText;
+  }
+
+  const linkStart = getLinkStartToken(sourceCode, link);
+  if (!linkStart) {
+    return null;
+  }
+
+  const start = linkStart.range[0] - chain.range[0];
+  const end = linkStart.range[1] - chain.range[0];
+  return linkStart.value === '.'
+    ? `${chainText.slice(0, start)}?.${chainText.slice(end)}`
+    : `${chainText.slice(0, start)}?.${chainText.slice(start)}`;
 }
 
 export default createRule<
@@ -138,6 +165,11 @@ export default createRule<
             description:
               'Check operands that are typed as `unknown` when inspecting "loose boolean" operands.',
           },
+          ignoreIfStatements: {
+            type: 'boolean',
+            description:
+              'Whether to ignore `if` statements whose only statement accesses the checked value, like `if (foo) foo.bar()`.',
+          },
           requireNullish: {
             type: 'boolean',
             description:
@@ -157,6 +189,7 @@ export default createRule<
       checkNumber: true,
       checkString: true,
       checkUnknown: true,
+      ignoreIfStatements: true,
       requireNullish: false,
     },
   ],
@@ -215,23 +248,102 @@ export default createRule<
               return null;
             }
 
-            const chainText = sourceCode.getText(chain);
-            if (link.optional) {
-              return fixer.replaceText(node, chainText);
-            }
+            const optionalChainText = getOptionalChainText(
+              sourceCode,
+              chain,
+              link,
+            );
+            return optionalChainText == null
+              ? null
+              : fixer.replaceText(node, optionalChainText);
+          },
+        });
+      },
+      // specific handling for `if (foo) foo.bar()`
+      IfStatement(node): void {
+        if (options.ignoreIfStatements || node.alternate) {
+          return;
+        }
 
-            const linkStart = getLinkStartToken(sourceCode, link);
-            if (!linkStart) {
+        // only a single statement, since an earlier one could change the value being chained
+        const statement =
+          node.consequent.type === AST_NODE_TYPES.BlockStatement &&
+          node.consequent.body.length === 1
+            ? node.consequent.body[0]
+            : node.consequent;
+        if (statement.type !== AST_NODE_TYPES.ExpressionStatement) {
+          return;
+        }
+
+        // an assignment target can't be optional, so only calls and property accesses can be rewritten
+        const chain =
+          statement.expression.type === AST_NODE_TYPES.ChainExpression
+            ? statement.expression.expression
+            : statement.expression;
+        if (
+          chain.type !== AST_NODE_TYPES.CallExpression &&
+          chain.type !== AST_NODE_TYPES.MemberExpression
+        ) {
+          return;
+        }
+
+        const { test } = node;
+        let checkedNode: TSESTree.Expression = test;
+        if (test.type === AST_NODE_TYPES.BinaryExpression) {
+          if (test.operator !== '!=') {
+            return;
+          }
+          if (isNullOrUndefined(test.right)) {
+            checkedNode = test.left;
+          } else if (isNullOrUndefined(test.left)) {
+            checkedNode = test.right;
+          } else {
+            return;
+          }
+        }
+
+        const link = findLinkOnTarget(chain, checkedNode);
+        if (!link) {
+          return;
+        }
+
+        // `if (foo)` also skips non-nullish falsy values like `0` and `''`, which `?.` doesn't
+        if (
+          checkedNode === test &&
+          !isValidFalseBooleanCheckType(test, true, parserServices, options)
+        ) {
+          return;
+        }
+
+        checkNullishAndReport(context, parserServices, options, [checkedNode], {
+          node,
+          messageId: 'preferOptionalChain',
+          fix: (fixer): RuleFix | null => {
+            const { sourceCode } = context;
+            // replacing the whole `if` would drop comments outside of the chain
+            if (
+              sourceCode.getCommentsInside(node).length !==
+              sourceCode.getCommentsInside(chain).length
+            ) {
               return null;
             }
 
-            const start = linkStart.range[0] - chain.range[0];
-            const end = linkStart.range[1] - chain.range[0];
-            const optionalChainText =
-              linkStart.value === '.'
-                ? `${chainText.slice(0, start)}?.${chainText.slice(end)}`
-                : `${chainText.slice(0, start)}?.${chainText.slice(start)}`;
-            return fixer.replaceText(node, optionalChainText);
+            const optionalChainText = getOptionalChainText(
+              sourceCode,
+              chain,
+              link,
+            );
+            // without a semicolon on the previous line, a statement starting with one of these
+            // would continue that line instead
+            if (optionalChainText == null || /^[([`]/.test(optionalChainText)) {
+              return null;
+            }
+
+            // keep the statement's semicolon, if it has one
+            const statementEnd = sourceCode
+              .getText(statement)
+              .slice(statement.expression.range[1] - statement.range[0]);
+            return fixer.replaceText(node, optionalChainText + statementEnd);
           },
         });
       },

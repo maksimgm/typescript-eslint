@@ -268,6 +268,50 @@ thing?.toString();
 </TabItem>
 </Tabs>
 
+### `ignoreIfStatements`
+
+{/* insert option description */}
+
+An `if` statement with more than one statement isn't reported, since an earlier statement could change the value being chained.
+
+Examples of code for this rule with `{ ignoreIfStatements: false }`:
+
+<Tabs>
+<TabItem value="❌ Incorrect">
+
+```ts option='{ "ignoreIfStatements": false }'
+declare const callback: (() => void) | undefined;
+declare const list: string[] | undefined;
+
+if (callback) {
+  callback();
+}
+
+if (list != null) {
+  list.push('item');
+}
+```
+
+</TabItem>
+<TabItem value="✅ Correct">
+
+```ts option='{ "ignoreIfStatements": false }'
+declare const callback: (() => void) | undefined;
+declare const list: string[] | undefined;
+declare const callbacks: (() => void)[];
+
+callback?.();
+
+list?.push('item');
+
+if (callback) {
+  callbacks.push(callback);
+}
+```
+
+</TabItem>
+</Tabs>
+
 ### `requireNullish`
 
 {/* insert option description */}

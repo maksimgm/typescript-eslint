@@ -154,6 +154,41 @@ declare const thing: bigint;
 thing?.toString();
 
 Incorrect
+Options: { "ignoreIfStatements": false }
+
+declare const callback: (() => void) | undefined;
+declare const list: string[] | undefined;
+
+if (callback) {
+~~~~~~~~~~~~~~~ Prefer using an optional chain expression instead, as it's more concise and easier to read.
+  callback();
+~~~~~~~~~~~~~
+}
+~
+
+if (list != null) {
+~~~~~~~~~~~~~~~~~~~ Prefer using an optional chain expression instead, as it's more concise and easier to read.
+  list.push('item');
+~~~~~~~~~~~~~~~~~~~~
+}
+~
+
+Correct
+Options: { "ignoreIfStatements": false }
+
+declare const callback: (() => void) | undefined;
+declare const list: string[] | undefined;
+declare const callbacks: (() => void)[];
+
+callback?.();
+
+list?.push('item');
+
+if (callback) {
+  callbacks.push(callback);
+}
+
+Incorrect
 Options: { "requireNullish": true }
 
 declare const thing1: string | null;

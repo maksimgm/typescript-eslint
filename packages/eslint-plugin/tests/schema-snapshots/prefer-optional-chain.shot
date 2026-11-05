@@ -33,6 +33,10 @@
         "description": "Check operands that are typed as `unknown` when inspecting \"loose boolean\" operands.",
         "type": "boolean"
       },
+      "ignoreIfStatements": {
+        "description": "Whether to ignore `if` statements whose only statement accesses the checked value, like `if (foo) foo.bar()`.",
+        "type": "boolean"
+      },
       "requireNullish": {
         "description": "Skip operands that are not typed with `null` and/or `undefined` when inspecting \"loose boolean\" operands.",
         "type": "boolean"
@@ -61,6 +65,8 @@ type Options = [
     checkString?: boolean;
     /** Check operands that are typed as `unknown` when inspecting "loose boolean" operands. */
     checkUnknown?: boolean;
+    /** Whether to ignore `if` statements whose only statement accesses the checked value, like `if (foo) foo.bar()`. */
+    ignoreIfStatements?: boolean;
     /** Skip operands that are not typed with `null` and/or `undefined` when inspecting "loose boolean" operands. */
     requireNullish?: boolean;
   },
